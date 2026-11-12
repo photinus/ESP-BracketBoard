@@ -1,0 +1,50 @@
+menu "BracketBoard"
+
+    config BB_WIFI_SSID
+        string "Wi-Fi SSID (STA)"
+        default ""
+        help
+            Network to join. Empty = start directly in access-point (setup) mode.
+            Can be overridden at runtime via POST /config (NVS).
+
+    config BB_WIFI_PASS
+        string "Wi-Fi password (STA)"
+        default ""
+        help
+            Empty with a non-empty SSID means an open network.
+
+    config BB_TOKEN
+        string "Control token"
+        default ""
+        help
+            Shared secret for the agent / manual page / config. Empty = generate 8
+            alphanumeric characters on first boot, store in NVS and print once on serial.
+            Anything set here is baked into the binary: prefer leaving it empty.
+
+    config BB_HOSTNAME
+        string "mDNS hostname"
+        default "scoreboard"
+        help
+            Reachable as <hostname>.local. Change per mat when running several signs.
+
+    config BB_AP_PASS
+        string "Fallback access point password (WPA2, 8-63 chars)"
+        default "bracketboard"
+        help
+            Used by the BracketBoard-XXXX AP that starts when the STA connection fails.
+            CHANGE THIS for real deployments.
+
+    config BB_STALE_TIMEOUT_MS
+        int "Stale timeout (ms)"
+        range 2000 10000
+        default 3000
+        help
+            No accepted snapshot for this long => clock freezes, colon off, agent not live.
+
+    config BB_MANUAL_ENABLED
+        bool "Enable manual (on-device) mode"
+        default n
+        help
+            Allows the web manual controller to drive the display when no agent is live.
+
+endmenu

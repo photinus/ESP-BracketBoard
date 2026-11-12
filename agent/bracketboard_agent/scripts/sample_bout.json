@@ -1,0 +1,127 @@
+[
+ {
+  "t": 0,
+  "do": "weight",
+  "value": "157"
+ },
+ {
+  "t": 0,
+  "do": "bout",
+  "value": "1203"
+ },
+ {
+  "t": 0,
+  "do": "splash",
+  "on": true
+ },
+ {
+  "t": 3,
+  "do": "splash",
+  "on": false
+ },
+ {
+  "t": 5,
+  "do": "start"
+ },
+ {
+  "t": 20,
+  "do": "score",
+  "side": "left",
+  "points": 2
+ },
+ {
+  "t": 35,
+  "do": "score",
+  "side": "right",
+  "points": 1
+ },
+ {
+  "t": 50,
+  "do": "score",
+  "side": "left",
+  "points": 2
+ },
+ {
+  "t": 60,
+  "do": "warn",
+  "side": "right"
+ },
+ {
+  "t": 70,
+  "do": "injury"
+ },
+ {
+  "t": 95,
+  "do": "resume"
+ },
+ {
+  "t": 160,
+  "do": "period",
+  "n": 2,
+  "clock_s": 120
+ },
+ {
+  "t": 165,
+  "do": "start"
+ },
+ {
+  "t": 185,
+  "do": "score",
+  "side": "right",
+  "points": 2
+ },
+ {
+  "t": 200,
+  "do": "stop"
+ },
+ {
+  "t": 205,
+  "do": "set_clock",
+  "seconds": 75
+ },
+ {
+  "t": 210,
+  "do": "start"
+ },
+ {
+  "t": 262,
+  "do": "warn",
+  "side": "left"
+ },
+ {
+  "t": 300,
+  "do": "swap",
+  "value": true
+ },
+ {
+  "t": 302,
+  "do": "period",
+  "n": 3,
+  "clock_s": 120
+ },
+ {
+  "t": 306,
+  "do": "start"
+ },
+ {
+  "t": 330,
+  "do": "score",
+  "side": "left",
+  "points": 3
+ },
+ {
+  "t": 380,
+  "do": "score",
+  "side": "right",
+  "points": 1
+ },
+ {
+  "t": 400,
+  "do": "expire"
+ },
+ {
+  "t": 445,
+  "do": "splash",
+  "on": true
+ }
+]

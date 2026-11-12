@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bracketboard-agent"
+version = "0.1.0"
+description = "Agent that pushes wrestling bout state (USABracketing or mock) to a BracketBoard ESP32 sign"
+requires-python = ">=3.10"
+dependencies = ["websockets>=12"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+bracketboard-agent = "bracketboard_agent.cli:main"
+
+[tool.setuptools]
+packages = ["bracketboard_agent", "bracketboard_agent.adapters"]
+
+[tool.setuptools.package-data]
+bracketboard_agent = ["scripts/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

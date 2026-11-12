@@ -1,0 +1,25 @@
+# Applied on first configure (delete sdkconfig to re-apply after editing).
+CONFIG_IDF_TARGET="esp32"
+
+# Flash / partitions
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# HTTP server: WebSocket support is required for /ws
+CONFIG_HTTPD_WS_SUPPORT=y
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=512
+CONFIG_HTTPD_MAX_URI_LEN=256
+
+# Sockets: httpd needs 3 internal + max_open_sockets (10)
+CONFIG_LWIP_MAX_SOCKETS=16
+
+# 1 ms tick so 50 ms / 200 ms periods are accurate
+CONFIG_FREERTOS_HZ=1000
+
+# Main task only does setup, but core + cJSON + std::string like some headroom
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+
+# Log level (token is never logged except the one-time first-boot print)
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
