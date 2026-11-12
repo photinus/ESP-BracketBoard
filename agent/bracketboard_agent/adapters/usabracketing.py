@@ -1,113 +1,198 @@
-"""USABracketing source adapter (STUB).
+"""USABracketing source adapter.
 
-Everything USABracketing-specific lives in this file. The sign (firmware) only knows the snapshot
-schema in docs/protocol-v1.md, so this adapter's whole job is:
+Reads the controller's state from the matside server (``GET http://127.0.0.1:6099/usab?function=getTimer``,
+exactly what the project's own video overlays poll) and maps it onto our snapshot. The model, the
+parsing and the mapping rules are in :mod:`bracketboard_agent.usab` and documented in
+``docs/usab-controller-protocol.md``; this module is only the glue:
 
-    USABracketing's live bout data  ->  one ``BoutState`` per ``read_state()`` call.
+* ``read_state()`` polls ``getTimer`` on every call (cheap, localhost) and keeps the receive time so
+  the clock of a running timer can be extrapolated (the controller sends nothing while it runs);
+* when the bout changes, weight/bout number are fetched in the background (``getEvent`` then the app
+  server's ``/api/live_scoring/bout``), cached per bout, retried with backoff, and never block or fail
+  state delivery;
+* ``read_state()`` returns ``None`` (never raises) while the matside server is unreachable or answers
+  garbage; the sign then goes stale on its own. The outage is logged once, the recovery once.
 
-The USABracketing interface details have not been supplied yet, so every method raises
-``NotImplementedError``. Fill in the TODOs below; nothing else in the agent needs to change.
+The agent never writes to the controller. ``device_key`` (from ``getEvent``) is never logged.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
+from collections import OrderedDict
+from typing import Callable
+from urllib.parse import urlsplit
+
 from ..adapter import SourceAdapter
 from ..schema import BoutState
+from ..usab.client import DEFAULT_MATSIDE_PORT, AppServerClient, MatsideClient, UsabClientError
+from ..usab.mapping import MappingConfig, StateMapper
+from ..usab.model import BoutInfo, EventInfo
+
+log = logging.getLogger("bracketboard.usab")
+
+LOOKUP_BACKOFF_S = (1.0, 2.0, 4.0, 8.0, 15.0, 30.0)
+_BOUT_CACHE_SIZE = 32
+
+
+def _safe_server(url: str) -> str:
+    """Host part of an app server URL for logging (no credentials, path or query)."""
+    try:
+        return urlsplit(url).hostname or "?"
+    except ValueError:
+        return "?"
 
 
 class USABracketingAdapter(SourceAdapter):
-    """Adapter for the USABracketing scoreboard/timer.
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = DEFAULT_MATSIDE_PORT,
+        *,
+        offset_ms: float = 0,
+        swap_sides: bool = False,
+        bout_lookup: bool = True,
+        poll_interval: float = 0.1,
+        timeout: float = 0.5,
+        period_overrides: dict | None = None,
+        client: MatsideClient | None = None,
+        app_client: AppServerClient | None = None,
+        lookup_backoff: tuple[float, ...] = LOOKUP_BACKOFF_S,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self._clock = clock
+        self.client = client or MatsideClient(host, port, timeout=timeout, clock=clock)
+        self.app = app_client or AppServerClient()
+        self.bout_lookup = bout_lookup
+        self.poll_interval = poll_interval
+        self.lookup_backoff = lookup_backoff
+        self.mapper = StateMapper(
+            MappingConfig(swap_sides=swap_sides, controller_offset_ms=offset_ms, period_overrides=dict(period_overrides or {}))
+        )
+        self._bouts: OrderedDict[tuple[str, str], BoutInfo] = OrderedDict()
+        self._lookup_key: tuple[str, str] | None = None
+        self._lookup_task: asyncio.Task | None = None
+        self._event: EventInfo | None = None
+        self._event_for: str | None = None
+        self._outage: str | None = None  # kind of the failure we already logged, None = healthy
+        self.lookup_failures = 0
 
-    TODO(source): decide HOW to read USABracketing. Candidates, in order of preference:
-      1. A documented/observable HTTP or WebSocket API of the USABracketing mat/timer page
-         (look at the browser dev tools network tab while a bout is running: is there a JSON
-         endpoint or socket the page itself polls/subscribes to?). Record the exact URL(s),
-         auth/cookies/headers, request cadence and one sample response in this docstring.
-      2. A local file or export the desktop software writes (path, format, update frequency).
-      3. Scraping the DOM of the timer page with a headless browser (last resort: fragile).
-    TODO(source): polling vs push.
-      * Polling: implement ``read_state`` as a fetch; keep ``wait_change`` as the default sleep
-        (the Publisher polls at ``--poll-hz`` anyway).
-      * Push (WebSocket/SSE): in ``start`` open the stream and keep the latest parsed state in
-        ``self._latest``; override ``wait_change`` to await an ``asyncio.Event`` that the reader
-        sets on every message, so changes are published immediately instead of at the next poll.
-    TODO(source): connection handling. ``read_state`` must return ``None`` (not raise) while the
-      source is unreachable or no bout is loaded; the sign then goes stale on its own after ~3 s.
-      Reconnect in the background; never block ``read_state`` for more than ~200 ms.
-
-    Field mapping (fill the middle column from the real USABracketing payload)::
-
-        BoutState field        USABracketing field / how to derive             notes
-        ---------------------  ----------------------------------------------  ---------------------
-        left_score             ??? (score of the competitor on the LEFT)        int 0..99
-        right_score            ??? (score of the competitor on the RIGHT)       int 0..99
-        left_warnings          ??? (stalling/caution count, left)               int 0..9, clamp
-        right_warnings         ???                                              int 0..9, clamp
-        period                 ??? (current period index)                       1..3 regulation,
-                                                                                4+ overtime/tiebreak
-        clock_ms_remaining     ??? (remaining time of the *period* clock)       ms, sampled NOW,
-                                                                                0..3_600_000
-        clock_state            ??? running / stopped / injury / expired         see below
-        screen                 "score" normally; "splash" between bouts or      score | splash
-                               when no bout is loaded / final result screen
-        weight                 ??? (weight class label)                         <= 8 printable ASCII
-        bout                   ??? (bout number)                                <= 8 printable ASCII
-        colors_swapped         True when the competitor on the LEFT side wears  see "left/right and
-                               the colour the sign gives to the right side      colours" below
-
-    TODO(mapping) left/right and colours. ``left_*`` / ``right_*`` are SCREEN SIDES, in the order
-      the operator wants them shown. The sign colours the left side red and the right side green
-      by default. Decide which USABracketing competitor goes on which screen side, then set
-      ``colors_swapped=True`` when the competitor on the LEFT side wears the colour the sign
-      would give to the right side (i.e. the left competitor is the green one). ``colors_swapped``
-      only swaps the side colours; it never moves scores. Verify against a real bout where
-      colours/sides change mid-match, if the format has that.
-
-    TODO(mapping) period labelling. ``period`` is an integer only. Map regulation periods to
-      1..3 and every overtime/tiebreak/ride-out period to 4..9 in order. If USABracketing exposes a
-      textual label ("SV-1", "TB-2", "UTB"), it cannot be sent in v1 (reserved optional field
-      ``period_label``); just map it to the right integer.
-
-    TODO(mapping) clock state. Map the source's timer states to:
-        running  - clock is counting down
-        stopped  - paused (whistle), between periods, or waiting to start
-        injury   - an injury / blood time stoppage is active (clock_ms_remaining stays the *main*
-                   period clock; the injury time itself is not carried in v1, ``injury_ms`` is a
-                   reserved optional field)
-        expired  - period/bout time reached 0 (the sign holds 0:00 until it sees this)
-
-    TODO(clock) sampling. ``clock_ms_remaining`` must be sampled *immediately* before returning
-      from ``read_state`` and be correct for that instant:
-        - if the source gives a value + timestamp, extrapolate: ``value - (now - ts)`` while it is
-          running (use a monotonic clock), never go below 0;
-        - if the source only gives whole seconds, do not fake sub-second precision; the sign slews
-          small errors but snaps anything > 250 ms off, so sample as often as possible.
-      Do not use the sender wall clock for anything but ``sender_ts``.
-
-    TODO(validation) ``read_state`` must return values inside the schema ranges (the Publisher
-      validates and refuses to send invalid snapshots, logging the problem). Clamp scores/warnings
-      and truncate ``weight``/``bout`` to 8 printable ASCII characters here.
-    """
-
-    def __init__(self, **options):
-        # TODO(config): accept whatever is needed to reach USABracketing (base URL, mat/ring id,
-        # credentials, poll interval, ...). Wire matching CLI flags in cli.py (--adapter
-        # usabracketing) once the interface is known; extra options arrive as keyword arguments.
-        self.options = options
-
+    # -- lifecycle -------------------------------------------------------------------------------
     async def start(self) -> None:
-        # TODO: create the HTTP session / open the socket / start the background reader task.
-        raise NotImplementedError("USABracketingAdapter.start: see the TODOs in this module's docstring")
+        try:
+            ok = await self.client.alive()
+        except Exception:  # never let a probe problem stop the agent
+            ok = False
+        if ok:
+            log.info("matside server reachable at %s", self.client.base_url)
+        else:
+            self._outage = "unreachable"
+            log.warning(
+                "matside server not reachable at %s (is the USABracketing controller/matside server running "
+                "on this machine?); will keep retrying, the sign shows stale until it answers",
+                self.client.base_url,
+            )
 
     async def stop(self) -> None:
-        # TODO: cancel background tasks, close sessions/sockets. Must be safe if start() failed.
-        raise NotImplementedError("USABracketingAdapter.stop: see the TODOs in this module's docstring")
+        self._cancel_lookup()
 
+    # -- SourceAdapter ---------------------------------------------------------------------------
     async def read_state(self) -> BoutState | None:
-        # TODO: fetch (or take ``self._latest``), map every field per the table above, sample the
-        # clock now, and return a BoutState. Return None if unavailable / no bout loaded.
-        raise NotImplementedError("USABracketingAdapter.read_state: see the TODOs in this module's docstring")
+        try:
+            timer, rx = await self.client.get_timer()
+        except UsabClientError as e:
+            self._note_failure(e)
+            return None
+        except Exception as e:  # defensive: an adapter must not raise
+            self._note_failure(UsabClientError("unreachable", type(e).__name__))
+            return None
+        if self._outage is not None:
+            log.info("matside server is answering again")
+            self._outage = None
+
+        bout_id = timer.bout_id.strip()
+        key = (timer.event_id.strip(), bout_id)
+        bout = None
+        if bout_id and self.bout_lookup:
+            bout = self._bouts.get(key)
+            if bout is not None:
+                self._bouts.move_to_end(key)
+            self._ensure_lookup(key, bout is not None)
+        elif self._lookup_key is not None:
+            self._cancel_lookup()
+        return self.mapper.map(timer, rx, self._clock(), bout)
 
     async def wait_change(self, timeout: float) -> None:
-        # TODO (push sources only): await an asyncio.Event set by the reader, with ``timeout``.
-        # Polling sources can drop this override and use the default sleep.
-        raise NotImplementedError("USABracketingAdapter.wait_change: see the TODOs in this module's docstring")
+        await asyncio.sleep(max(0.0, min(timeout, self.poll_interval)))
+
+    # -- outage logging --------------------------------------------------------------------------
+    def _note_failure(self, e: UsabClientError) -> None:
+        if self._outage == e.kind:
+            log.debug("matside poll still failing: %s", e)
+            return
+        first = self._outage is None
+        self._outage = e.kind
+        if e.kind == "parse":
+            log.warning("matside server answered something we cannot parse (%s); no state until it does", e)
+        elif first:
+            log.warning("lost the matside server (%s); no state until it answers again", e)
+        else:
+            log.warning("matside server still failing, now: %s", e)
+
+    # -- background bout lookup ------------------------------------------------------------------
+    def _cancel_lookup(self) -> None:
+        task, self._lookup_task = self._lookup_task, None
+        self._lookup_key = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    def _ensure_lookup(self, key: tuple[str, str], have: bool) -> None:
+        if have:
+            if self._lookup_key == key:
+                self._cancel_lookup()
+            return
+        if self._lookup_key == key and self._lookup_task is not None and not self._lookup_task.done():
+            return
+        self._cancel_lookup()
+        self._lookup_key = key
+        self._lookup_task = asyncio.ensure_future(self._lookup(key))
+
+    async def _lookup(self, key: tuple[str, str]) -> None:
+        event_id, bout_id = key
+        attempt = 0
+        while True:
+            try:
+                if self._event is None or self._event_for != event_id:
+                    self._event = await self.client.get_event()
+                    self._event_for = event_id
+                info = await self.app.fetch_bout(self._event, bout_id)
+            except asyncio.CancelledError:
+                raise
+            except UsabClientError as e:
+                self._event = None  # the key may have changed: ask the controller again next time
+                self.lookup_failures += 1
+                delay = self.lookup_backoff[min(attempt, len(self.lookup_backoff) - 1)]
+                (log.warning if attempt == 0 else log.debug)(
+                    "bout lookup for bout %s failed (%s); retrying in %.0f s", bout_id, e, delay
+                )
+                attempt += 1
+                await asyncio.sleep(delay)
+                continue
+            except Exception as e:  # never let the background task die silently
+                self._event = None
+                self.lookup_failures += 1
+                delay = self.lookup_backoff[min(attempt, len(self.lookup_backoff) - 1)]
+                log.warning("bout lookup failed unexpectedly (%s); retrying in %.0f s", type(e).__name__, delay)
+                attempt += 1
+                await asyncio.sleep(delay)
+                continue
+            self._bouts[key] = info
+            while len(self._bouts) > _BOUT_CACHE_SIZE:
+                self._bouts.popitem(last=False)
+            log.info("bout %s: weight %r, bout number %r (app server %s)", bout_id, info.weight_name, info.display_bout,
+                     _safe_server(self._event.server if self._event else ""))
+            return
+
+
+UsabAdapter = USABracketingAdapter

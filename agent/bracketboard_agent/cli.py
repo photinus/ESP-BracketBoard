@@ -1,4 +1,11 @@
-"""Command line: ``python -m bracketboard_agent --host scoreboard.local --token XXX --mock``."""
+"""Command line.
+
+    python -m bracketboard_agent --host scoreboard.local --token XXX --mock
+    python -m bracketboard_agent --host scoreboard.local --token XXX --adapter usabracketing
+
+Exit codes: 0 normal exit (Ctrl-C included), 2 usage/configuration error (no token, no source,
+bad option value), 3 the selected adapter is not implemented.
+"""
 from __future__ import annotations
 
 import argparse
@@ -33,6 +40,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--heartbeat", type=float, default=1.0, help="heartbeat period in seconds (default 1.0)")
     p.add_argument("--poll-hz", type=float, default=10.0, help="adapter poll rate (default 10)")
     p.add_argument("--max-hz", type=float, default=20.0, help="max snapshots per second (default 20)")
+    g = p.add_argument_group("USABracketing source (--adapter usabracketing)")
+    g.add_argument("--usab-host", default="127.0.0.1", help="matside server host (default: 127.0.0.1, the controller laptop)")
+    g.add_argument("--usab-port", type=int, default=6099, help="matside server port (default: 6099)")
+    g.add_argument(
+        "--usab-offset-ms", type=float, default=0.0,
+        help="clock offset in ms, subtracted from the controller-side age of a sample (default 0: agent runs on the "
+        "controller laptop). Positive shortens the computed age, like the overlay's offset_millis",
+    )
+    g.add_argument("--swap-sides", action="store_true", help="flip the side rule (default: red wrestler on the left)")
+    g.add_argument("--no-bout-lookup", action="store_true", help="do not fetch weight/bout number from the app server")
     p.add_argument("-v", "--verbose", action="count", default=0, help="more logging (-vv for debug)")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
@@ -54,17 +71,29 @@ def build_transport(host: str, port: int, token: str, http_only: bool = False) -
     return FailoverTransport(WsTransport(f"ws://{netloc}/ws", token), http)
 
 
+class _UsageError(Exception):
+    """Bad command line / configuration (exit code 2)."""
+
+
 def build_adapter(args: argparse.Namespace) -> SourceAdapter:
     name = args.adapter or ("mock" if args.mock else None)
     if name is None:
-        raise SystemExit("error: choose a source: --mock or --adapter usabracketing")
+        raise _UsageError("choose a source: --mock or --adapter usabracketing")
     if name == "mock":
         from .adapters.mock import MockBoutAdapter
 
         return MockBoutAdapter(args.script, speed=args.speed, loop=args.loop)
     from .adapters.usabracketing import USABracketingAdapter
 
-    return USABracketingAdapter()
+    if not 0 < args.usab_port < 65536:
+        raise _UsageError("--usab-port must be 1..65535")
+    return USABracketingAdapter(
+        args.usab_host,
+        args.usab_port,
+        offset_ms=args.usab_offset_ms,
+        swap_sides=args.swap_sides,
+        bout_lookup=not args.no_bout_lookup,
+    )
 
 
 async def _run(args: argparse.Namespace, token: str) -> int:
@@ -110,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_run(args, token))
     except KeyboardInterrupt:
         return 0
+    except _UsageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     except NotImplementedError as e:
         print(f"error: {e}", file=sys.stderr)
         return 3

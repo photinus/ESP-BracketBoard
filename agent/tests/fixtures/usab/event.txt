@@ -1,0 +1,1 @@
+{'event_id':'77','device_key':'SECRET-DEVICE-KEY-123','server':'https://app.example.org'}

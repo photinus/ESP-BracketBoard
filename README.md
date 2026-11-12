@@ -19,7 +19,7 @@ On-device manual scoring exists as an opt-in fallback (off by default).
 | `core/` | Portable C++17 logic (parser, seq filter, clock model, hub, board, manual mode). Host-tested |
 | `host/` | Host build: unit tests (doctest), console display, `bb_core_cli` stdio bridge |
 | `firmware/` | ESP-IDF 5.x glue (Wi-Fi STA→AP fallback, mDNS, WS + HTTP server, NVS config, display stub) |
-| `agent/` | Python reference agent: mock bout, USABracketing adapter **stub**, fake sign for testing |
+| `agent/` | Python reference agent: mock bout, USABracketing controller model + adapter, mock bout, fake sign and fake matside server for testing |
 
 ## Try it without hardware
 
@@ -45,5 +45,8 @@ cd agent && python -m bracketboard_agent --host 127.0.0.1 --port 8080 --token se
   agent against the real C++ core over real sockets.
 - **Not verified:** `firmware/` has not been compiled with ESP-IDF or run on a board (see
   `firmware/REVIEW_CHECKLIST.md`).
-- **Stubs awaiting your input:** `agent/bracketboard_agent/adapters/usabracketing.py` (needs USABracketing's
-  interface details and sample payloads) and `firmware/main/panel_display.cpp` (needs the display hardware).
+- **Inferred, needs a real capture:** the USABracketing adapter reads the matside server's `getTimer`
+  (`localhost:6099`). Its format was reconstructed from the controller source (the server ships as
+  `.class` files only), so confirm it against a real response (`docs/usab-controller-protocol.md`
+  section 8 lists the open questions: which side red is on, warnings, injury-timer owner, clock offset).
+- **Stub awaiting your input:** `firmware/main/panel_display.cpp` (needs the display hardware).

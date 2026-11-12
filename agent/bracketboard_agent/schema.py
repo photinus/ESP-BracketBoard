@@ -27,6 +27,8 @@ SCREENS = ("score", "splash")
 
 _SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
 _LABEL_RE = re.compile(r"^[\x20-\x7E]{0,8}$")
+_CLOCK_LABEL_RE = re.compile(r"^[\x20-\x7E]{0,12}$")
+SIDES = ("none", "left", "right")
 
 # Wire error codes (identical to the C++ parse_error_code strings).
 ERROR_CODES = (
@@ -69,6 +71,14 @@ class BoutState:
     weight: str = ""
     bout: str = ""
     colors_swapped: bool = False
+    # Optional v1-compatible extension fields (docs/usab-controller-protocol.md section 6). ``None`` =
+    # the source does not provide it; such fields are left out of the message entirely.
+    clock_label: str | None = None  # name of the clock being shown, 0-12 printable ASCII
+    blink: str | None = None  # none | left | right: blink that side's score
+    riding_ms: int | None = None  # signed riding time, positive = left side ahead
+    riding_dir: int | None = None  # -1 | 0 | 1: rate sign while the clock runs (+1 = left accumulating)
+    shot_clock_ms: int | None = None  # shot clock remaining
+    shot_clock_side: str | None = None  # none | left | right
 
 
 # --- field table ---------------------------------------------------------------------------------
@@ -90,6 +100,18 @@ _FIELDS: tuple[tuple[str, str, Any], ...] = (
     ("bout", "label", None),
     ("colors_swapped", "bool", None),
 )
+
+
+# Optional extension fields, validated only when present: (name, kind, arg), in validation order.
+_OPTIONAL_FIELDS: tuple[tuple[str, str, Any], ...] = (
+    ("clock_label", "label12", None),
+    ("blink", "enum", SIDES),
+    ("riding_ms", "int", (-3600000, 3600000)),
+    ("riding_dir", "int", (-1, 1)),
+    ("shot_clock_ms", "int", (0, 3600000)),
+    ("shot_clock_side", "enum", SIDES),
+)
+OPTIONAL_FIELD_NAMES = tuple(n for n, _k, _a in _OPTIONAL_FIELDS)
 
 
 def _as_int(value: Any) -> int | None:
@@ -123,34 +145,40 @@ def validate_state_message(d: dict) -> None:
     for name, kind, arg in _FIELDS:
         if name not in d:
             raise SchemaError("missing_field", name)
-        value = d[name]
-        if kind == "int":
-            n = _as_int(value)
-            if n is None:
-                raise SchemaError("bad_type", name)
-            if name == "v":
-                continue  # == 1 guaranteed above
-            lo, hi = arg
-            if not lo <= n <= hi:
-                raise SchemaError("out_of_range", name)
-        elif kind == "session":
-            if not isinstance(value, str):
-                raise SchemaError("bad_type", name)
-            if not _SESSION_RE.match(value):
-                raise SchemaError("out_of_range", name)
-        elif kind == "enum":
-            if not isinstance(value, str):
-                raise SchemaError("bad_type", name)
-            if value not in arg:
-                raise SchemaError("out_of_range", name)
-        elif kind == "label":
-            if not isinstance(value, str):
-                raise SchemaError("bad_type", name)
-            if not _LABEL_RE.match(value):
-                raise SchemaError("out_of_range", name)
-        elif kind == "bool":
-            if not isinstance(value, bool):
-                raise SchemaError("bad_type", name)
+        _check_field(name, kind, arg, d[name])
+    for name, kind, arg in _OPTIONAL_FIELDS:
+        if name in d:  # present -> must be valid (an explicit null is bad_type)
+            _check_field(name, kind, arg, d[name])
+
+
+def _check_field(name: str, kind: str, arg: Any, value: Any) -> None:
+    if kind == "int":
+        n = _as_int(value)
+        if n is None:
+            raise SchemaError("bad_type", name)
+        if name == "v":
+            return  # == 1 guaranteed by the caller
+        lo, hi = arg
+        if not lo <= n <= hi:
+            raise SchemaError("out_of_range", name)
+    elif kind == "session":
+        if not isinstance(value, str):
+            raise SchemaError("bad_type", name)
+        if not _SESSION_RE.match(value):
+            raise SchemaError("out_of_range", name)
+    elif kind == "enum":
+        if not isinstance(value, str):
+            raise SchemaError("bad_type", name)
+        if value not in arg:
+            raise SchemaError("out_of_range", name)
+    elif kind in ("label", "label12"):
+        if not isinstance(value, str):
+            raise SchemaError("bad_type", name)
+        if not (_LABEL_RE if kind == "label" else _CLOCK_LABEL_RE).match(value):
+            raise SchemaError("out_of_range", name)
+    elif kind == "bool":
+        if not isinstance(value, bool):
+            raise SchemaError("bad_type", name)
 
 
 def _reject_constant(name: str):
@@ -175,7 +203,7 @@ def parse_and_validate(raw: bytes | str) -> dict:
 
 def to_message(state: BoutState, session: str, seq: int, sender_ts: int) -> dict:
     """Build the wire dict for a snapshot. Does not validate (see :func:`validate_state_message`)."""
-    return {
+    msg = {
         "type": "state",
         "v": PROTOCOL_VERSION,
         "session": session,
@@ -193,6 +221,11 @@ def to_message(state: BoutState, session: str, seq: int, sender_ts: int) -> dict
         "bout": state.bout,
         "colors_swapped": state.colors_swapped,
     }
+    for name in OPTIONAL_FIELD_NAMES:
+        value = getattr(state, name)
+        if value is not None:
+            msg[name] = value
+    return msg
 
 
 def dumps(msg: dict) -> str:

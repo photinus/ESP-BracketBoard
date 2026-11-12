@@ -29,7 +29,10 @@ CLOCK_DEVIATION_MS = 150
 SEQ_MASK = 0xFFFFFFFF
 AUTH_RETRY_S = 5.0
 
-_NON_CLOCK_FIELDS = tuple(f.name for f in fields(BoutState) if f.name != "clock_ms_remaining")
+# Time-varying fields: they move on their own while the clock runs (the sign extrapolates them), so a
+# plain tick must not count as a change; they are compared against a linear extrapolation instead.
+_TIMED_FIELDS = ("clock_ms_remaining", "riding_ms", "shot_clock_ms")
+_NON_CLOCK_FIELDS = tuple(f.name for f in fields(BoutState) if f.name not in _TIMED_FIELDS)
 
 
 def _wall_ms() -> int:
@@ -101,7 +104,26 @@ class Publisher:
         expected = last.clock_ms_remaining
         if last.clock_state == "running":
             expected = max(0.0, expected - (now - t) * 1000.0)
-        return abs(state.clock_ms_remaining - expected) > CLOCK_DEVIATION_MS
+        if abs(state.clock_ms_remaining - expected) > CLOCK_DEVIATION_MS:
+            return True
+        return self._ext_deviates(state, now)
+
+    def _ext_deviates(self, state: BoutState, now: float) -> bool:
+        """Optional timed extension fields (riding / shot clock) vs their extrapolation."""
+        last, t = self._last_state, self._last_sent_t
+        assert last is not None and t is not None
+        elapsed_ms = (now - t) * 1000.0 if last.clock_state == "running" else 0.0
+        if (state.riding_ms is None) != (last.riding_ms is None) or (state.shot_clock_ms is None) != (last.shot_clock_ms is None):
+            return True
+        if state.riding_ms is not None and last.riding_ms is not None:
+            expected = last.riding_ms + (last.riding_dir or 0) * elapsed_ms
+            if abs(state.riding_ms - expected) > CLOCK_DEVIATION_MS:
+                return True
+        if state.shot_clock_ms is not None and last.shot_clock_ms is not None:
+            expected = max(0.0, last.shot_clock_ms - elapsed_ms)
+            if abs(state.shot_clock_ms - expected) > CLOCK_DEVIATION_MS:
+                return True
+        return False
 
     def _decide(self, state: BoutState, now: float) -> str | None:
         """Return the reason to send now, or None."""

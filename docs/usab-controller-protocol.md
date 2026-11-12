@@ -67,7 +67,7 @@ periodic refresh while the clock runs**, so consumers must extrapolate.
 | `bout_id`, `event_id` | opaque ids |
 | `w1_color`, `w2_color` | hex **without `#`** (from `match_format.colors[].hex`), or `black` if unknown |
 | `w1_score`, `w2_score` | match scores (ints as text) |
-| `tie_winner` | `1`/`2`/`""` (freestyle/greco tie-break indicator) |
+| `tie_winner` | `1`/`2`, or `""`/`0` when none (the controller sends `0` before any score object exists) |
 | `t1_score`, `t2_score` | dual/team scores |
 | `riding_time` | signed float seconds (0 if the timer has none) |
 | `w1_position` | `top` / `bottom` / `neutral` |
@@ -75,6 +75,11 @@ periodic refresh while the clock runs**, so consumers must extrapolate.
 | `wrestler_indicator` | `1` / `2` / `0` / `null` |
 | `updated_millis` | **controller machine** epoch ms when the sample was taken |
 | `message` | `"<counter>.<text>"` score/challenge event text (overlay strips up to the first `.`) |
+
+Quirks seen in the controller code: values are **not URL-encoded** (a `name` with spaces or a
+`message` containing `&`/`#` goes out raw, so the server's query parsing may split it), and when the
+server replies `0` to `updateTimer` the controller immediately follows with `updateEvent`
+(so `getEvent` can be blank until the first push after a server restart).
 
 ## 4. Matside server -> clients: `getTimer`
 
@@ -115,7 +120,9 @@ remaining_ms = current_time*1000 - age_ms     if running == 1
 remaining_ms = clamp(remaining_ms, 0, 3_600_000)   (stopping_time assumed 0)
 ```
 
-`controller_offset_ms` (default 0, configurable) = controller clock minus server clock. Because
+`controller_offset_ms` (default 0, configurable) = **server clock minus controller clock**
+(`system_millis - updated_millis` = true age + that difference, so it is subtracted; this is the
+overlay's `offset_millis` convention). Because
 the sign re-syncs from every snapshot and slews < 250 ms, a 100-200 ms constant error is
 acceptable; a larger one shows as a visible jump on each stop.
 
@@ -132,7 +139,7 @@ reaches 0 it reports `expired`.
 | `left_score`, `right_score` | **Left = the red wrestler, right = green/blue** (matches the physical clock's fixed "Red"/"Green-Blue" fields). Classify `w1_color`/`w2_color` by hue; if neither classifies as red, left = wrestler 1. Config `swap_sides` flips. **(assumption: confirm which side the venue's sign puts red on.)** |
 | `colors_swapped` | `false` by default (red is always left). Config-driven only. |
 | `left_warnings`, `right_warnings` | **Not available** from `getTimer` (stalling/caution counts live in `bout.scores`). `0` until we map them from the app server (**TODO**, needs sample `bout` payload). |
-| `period` | Parse from `name`: `Period N` -> N; `Sudden Victory`/`SV` -> 4; `Tie Breaker N`/`TB ...` -> 4+; `UTB ...` -> 6; clamp 1..9. If `name` is a non-period timer (`Break`, wrestler timers) **keep the last known period** (stateful), default 1. Overridable map in config. |
+| `period` | Parse from `name`: `Period N` -> N; `Sudden Victory`/`SV` -> 4; `Tie Breaker N`/`TB ... N` -> 4+N (5 if no number); `UTB ...` -> 7; clamp 1..9. If `name` is a non-period timer (`Break`, wrestler timers) **keep the last known period** (stateful), default 1. Overridable map in config. |
 | `clock_ms_remaining` | Section 5 formula on the *current timer*, whatever its kind. |
 | `clock_state` | `running` if `running==1`; else `expired` if remaining==0 after a run (or current_time==0); else `stopped`. The enum value `injury` is **not** used for wrestler timers: those are real countdowns, so they are `running`/`stopped` plus `clock_label` and `blink` (below). |
 | `screen` | `splash` if `bout_id` is empty (no bout selected) or the server is in its default state; otherwise `score`. |

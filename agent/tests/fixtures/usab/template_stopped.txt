@@ -1,0 +1,1 @@
+{'name':'Period 1', 'current_time':120.0, 'running':0, 'updated_millis':1763000000123, 'bout_id':'1234','event_id':'77','w1_color':'FF0000','w2_color':'0000FF','w1_score':'3','w2_score':'1', 'tie_winner':'', 't1_score':'0','t2_score':'0', 'riding_time':0.0, 'w1_position':'neutral', 'shot_clock':0.0, 'wrestler_indicator':'', 'message':'4.T2 Smith', 'system_millis':1763000000150}

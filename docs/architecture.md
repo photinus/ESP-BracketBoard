@@ -7,7 +7,9 @@ USABracketing --(adapter)--> Python agent --WS /ws (primary) | HTTP POST /state-
 
 ## Boundaries
 - **Firmware knows only the snapshot schema** (docs/protocol-v1.md). Nothing USABracketing-specific is in
-  `core/` or `firmware/`. All USABracketing mapping lives in `agent/bracketboard_agent/adapters/usabracketing.py`.
+  `core/` or `firmware/`. All USABracketing-specific code lives in the agent: `agent/bracketboard_agent/usab/` (controller model,
+  parser, clock extrapolation, mapping, clients) and `adapters/usabracketing.py`. See
+  docs/usab-controller-protocol.md.
 - `core/` is portable C++17 (no ESP/OS headers) and is compiled both on the host (tests) and by ESP-IDF.
   cJSON v1.7.18 is vendored in `core/third_party/cjson` and used on both; it never appears in public headers.
 - `firmware/` is a thin ESP-IDF layer that maps sockets to `ConnId`, calls `ControlHub`/`Board`, and
@@ -80,7 +82,8 @@ Responses (stdout):
 - `adapters/mock.py`: `MockBoutAdapter(script_path, speed=1.0, loop=False)` replays `scripts/sample_bout.json`
   (`[{"t": s, "do": "start|stop|injury|resume|score|warn|period|expire|set_clock|swap|splash|weight|bout", ...}]`),
   keeps its own authoritative clock; `finished` property.
-- `adapters/usabracketing.py`: stub subclass; every method raises `NotImplementedError` with TODOs.
+- `adapters/usabracketing.py`: real adapter polling the matside server's `getTimer` (model, mapping and clock
+  rules in docs/usab-controller-protocol.md; code in `usab/`).
 - `publisher.py`: `Publisher(adapter, transport, heartbeat_s=1.0, poll_hz=10, max_hz=20, clock=time.monotonic)`;
   `async run()` / `stop()`. Session = `secrets.token_hex(6)`; seq starts at 1, `& 0xFFFFFFFF`; `sender_ts =
   time.time_ns()//1_000_000`. Immediate send on any non-clock field change or clock deviating > 150 ms from

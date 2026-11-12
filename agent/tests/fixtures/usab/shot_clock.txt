@@ -1,0 +1,1 @@
+{'name':'Period 1', 'current_time':90.0, 'running':1, 'updated_millis':1763000300000, 'bout_id':'88','event_id':'77','w1_color':'FF0000','w2_color':'00AA00','w1_score':'2','w2_score':'2', 'tie_winner':'2', 't1_score':'0','t2_score':'0', 'riding_time':0.0, 'w1_position':'neutral', 'shot_clock':24.99, 'wrestler_indicator':'2', 'message':'3.T2', 'system_millis':1763000300010}

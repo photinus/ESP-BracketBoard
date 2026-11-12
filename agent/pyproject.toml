@@ -16,7 +16,7 @@ test = ["pytest>=7"]
 bracketboard-agent = "bracketboard_agent.cli:main"
 
 [tool.setuptools]
-packages = ["bracketboard_agent", "bracketboard_agent.adapters", "fake_esp"]
+packages = ["bracketboard_agent", "bracketboard_agent.adapters", "bracketboard_agent.usab", "fake_esp"]
 
 [tool.setuptools.package-data]
 bracketboard_agent = ["scripts/*.json"]
