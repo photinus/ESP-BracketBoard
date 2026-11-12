@@ -1,0 +1,17 @@
+{
+ "type": "state",
+ "v": 1,
+ "session": "a1b2c3d4e5f6",
+ "seq": 1042,
+ "sender_ts": 1763000000123,
+ "left_score": 3,
+ "right_score": 1,
+ "right_warnings": 1,
+ "period": 2,
+ "clock_ms_remaining": 87340,
+ "clock_state": "running",
+ "screen": "score",
+ "weight": "157",
+ "bout": "1203",
+ "colors_swapped": false
+}
