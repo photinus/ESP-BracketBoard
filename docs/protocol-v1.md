@@ -43,7 +43,11 @@ Precedence when several apply: `too_large` > `not_json` > `not_object` > `wrong_
 
 **Versioning / forward compat.** Unknown fields are ignored. New *optional* fields do not bump `v`.
 Reserved optional names: `left_name`, `right_name`, `left_team`, `right_team`, `injury_ms`,
-`period_label`, `aux`. Any change to the meaning, type, or required-ness of an existing field bumps `v`.
+`period_label`, `aux`.
+Optional fields defined so far (all additive; the current firmware ignores them): `clock_label`,
+`blink`, `riding_ms`, `riding_dir`, `shot_clock_ms`, `shot_clock_side`. They exist because the
+USABracketing controller drives injury/blood timers as real countdowns and reports riding time and
+a shot clock; see docs/usab-controller-protocol.md section 6. Any change to the meaning, type, or required-ness of an existing field bumps `v`.
 The sign reports `supported_v` in `hello_ack`; the agent sends the highest common version.
 
 ## 2. Seq rules (stale / duplicate / restart)
