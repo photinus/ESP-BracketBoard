@@ -16,10 +16,11 @@ test = ["pytest>=7"]
 bracketboard-agent = "bracketboard_agent.cli:main"
 
 [tool.setuptools]
-packages = ["bracketboard_agent", "bracketboard_agent.adapters"]
+packages = ["bracketboard_agent", "bracketboard_agent.adapters", "fake_esp"]
 
 [tool.setuptools.package-data]
 bracketboard_agent = ["scripts/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["e2e: end-to-end tests: real agent code against fake_esp wired to the C++ bb_core_cli bridge"]

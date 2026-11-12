@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host:
+    name: host (cmake + ctest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S host -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Upload bb_core_cli
+        uses: actions/upload-artifact@v4
+        with:
+          name: bb_core_cli
+          path: build/bb_core_cli
+
+  agent:
+    name: agent (pytest, incl. e2e against bb_core_cli)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install agent and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "agent[test]" websockets
+      - name: Build bb_core_cli (needed by the e2e tests)
+        run: |
+          cmake -S host -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j --target bb_core_cli
+      - name: Pytest
+        env:
+          BB_CORE_CLI: ${{ github.workspace }}/build/bb_core_cli
+        run: python -m pytest agent -q

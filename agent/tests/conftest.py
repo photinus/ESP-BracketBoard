@@ -25,3 +25,14 @@ class FakeClock:
 @pytest.fixture
 def clock() -> FakeClock:
     return FakeClock()
+
+
+@pytest.fixture(scope="session")
+def core_cli() -> str:
+    """Path of the C++ ``bb_core_cli`` stdio bridge (env BB_CORE_CLI or common build dirs); skip if absent."""
+    from fake_esp.bridge import find_core_cli
+
+    path = find_core_cli()
+    if not path:
+        pytest.skip("bb_core_cli not built (cmake -S host -B build && cmake --build build, or set BB_CORE_CLI)")
+    return path
