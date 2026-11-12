@@ -514,3 +514,14 @@ TEST_CASE("hub: status mode agent when manual disabled and no data") {
   J s(f.hub.status_json());
   CHECK(std::string(s.str("mode")) == "agent");
 }
+
+TEST_CASE("ControlHub: on_open returns false beyond max_pending") {
+  bb::FakeTimeSource ts;
+  bb::Board board(ts);
+  bb::ControlHub hub(board, ts, "tok", 2000, 2);
+  CHECK(hub.on_open(1));
+  CHECK(hub.on_open(2));
+  CHECK_FALSE(hub.on_open(3));
+  hub.on_close(1);
+  CHECK(hub.on_open(4));  // a slot freed up
+}

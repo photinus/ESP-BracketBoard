@@ -5,7 +5,8 @@
 //  - Connections that emit a close_after frame are forgotten by the hub at that moment
 //    (a later on_close for them is a harmless no-op, and further text from them is ignored).
 //  - on_open beyond max_pending pending connections is not tracked at all: the hub emits
-//    nothing for it and ignores every frame it sends (the transport should drop it).
+//    nothing for it, ignores every frame it sends, and on_open returns false so the transport
+//    closes the socket.
 //    Re-opening an id the hub already knows replaces the old record (the old socket must be gone).
 //  - Hello handling order: size/JSON/type -> bad_message; v != 1 -> unsupported_version;
 //    token -> auth_failed.
@@ -98,11 +99,12 @@ ControlHub::ControlHub(Board& board, const TimeSource& ts, std::string token,
       info_(std::move(info)),
       boot_us_(ts.now_us()) {}
 
-void ControlHub::on_open(ConnId c) {
+bool ControlHub::on_open(ConnId c) {
   // A reused id means the old socket is gone: drop whatever we knew about it.
   on_close(c);
-  if (pending_.size() >= max_pending_) return;  // not tracked; its frames are ignored
+  if (pending_.size() >= max_pending_) return false;  // not tracked; caller must close the socket
   pending_.push_back({c, ts_.now_us()});
+  return true;
 }
 
 void ControlHub::on_close(ConnId c) {

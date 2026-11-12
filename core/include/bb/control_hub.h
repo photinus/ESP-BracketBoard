@@ -34,8 +34,9 @@ class ControlHub {
   ControlHub(Board& board, const TimeSource& ts, std::string token,
              int hello_timeout_ms = 2000, size_t max_pending = 3, HubInfo info = {});
 
-  void on_open(ConnId c);  // adds a pending connection (if > max_pending pending: reject by
-                           // emitting nothing here; on_text for unknown conn is ignored)
+  // Adds a pending connection. Returns false if rejected (max_pending already pending): the
+  // transport MUST then close that socket (the hub ignores every frame from it).
+  bool on_open(ConnId c);
   // Handles one text frame. Appends zero or more Outbound to `out`.
   //  - pending conn: first frame must be a valid hello with correct token -> hello_ack, becomes
   //    the control client (previous client gets {"type":"error","code":"replaced"} + close).

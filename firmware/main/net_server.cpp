@@ -401,9 +401,14 @@ void NetServer::ws_open(int fd) {
   }
   free_slot->fd = fd;
   free_slot->conn = next_conn_++;
+  bool accepted;
   {
     MutexLock l(mu_);
-    hub_.on_open(free_slot->conn);
+    accepted = hub_.on_open(free_slot->conn);
+  }
+  if (!accepted) {
+    ESP_LOGW(TAG, "ws: too many pending connections, closing fd %d", fd);
+    httpd_sess_trigger_close(server_, fd);  // close_cb -> ws_closed -> hub.on_close (no-op)
   }
 }
 

@@ -137,7 +137,11 @@ int main(int argc, char** argv) {
       if (!int_of(req.get(), "conn", conn) || !ev) {
         emit_error("ws requires conn and ev");
       } else if (std::strcmp(ev, "open") == 0) {
-        hub.on_open(static_cast<ConnId>(conn));
+        if (!hub.on_open(static_cast<ConnId>(conn))) {
+          // Rejected (too many pending): close with no frame, as the firmware does.
+          std::printf("{\"ch\":\"ws\",\"conn\":%lld,\"close\":true}\n", conn);
+          std::fflush(stdout);
+        }
       } else if (std::strcmp(ev, "close") == 0) {
         hub.on_close(static_cast<ConnId>(conn));
       } else if (std::strcmp(ev, "text") == 0) {

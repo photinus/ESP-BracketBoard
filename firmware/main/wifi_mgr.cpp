@@ -8,6 +8,7 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "freertos/task.h"
 
 namespace bbfw {
 
