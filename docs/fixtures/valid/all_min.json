@@ -1,0 +1,18 @@
+{
+ "type": "state",
+ "v": 1,
+ "session": "x",
+ "seq": 0,
+ "sender_ts": 0,
+ "left_score": 0,
+ "right_score": 0,
+ "left_warnings": 0,
+ "right_warnings": 0,
+ "period": 1,
+ "clock_ms_remaining": 0,
+ "clock_state": "expired",
+ "screen": "score",
+ "weight": "",
+ "bout": "",
+ "colors_swapped": false
+}

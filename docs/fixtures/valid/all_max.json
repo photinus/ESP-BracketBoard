@@ -1,0 +1,18 @@
+{
+ "type": "state",
+ "v": 1,
+ "session": "abcdefghijklmnop",
+ "seq": 4294967295,
+ "sender_ts": 9007199254740991,
+ "left_score": 99,
+ "right_score": 99,
+ "left_warnings": 9,
+ "right_warnings": 9,
+ "period": 9,
+ "clock_ms_remaining": 3600000,
+ "clock_state": "running",
+ "screen": "score",
+ "weight": "12345678",
+ "bout": "ABCDEFGH",
+ "colors_swapped": true
+}

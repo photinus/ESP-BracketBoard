@@ -1,0 +1,10 @@
+build/
+build-*/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+firmware/build/
+firmware/sdkconfig
+firmware/managed_components/

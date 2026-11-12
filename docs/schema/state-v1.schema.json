@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bracketboard.local/schema/state-v1.json",
+  "title": "BracketBoard state snapshot v1",
+  "type": "object",
+  "required": ["type","v","session","seq","sender_ts","left_score","right_score",
+               "left_warnings","right_warnings","period","clock_ms_remaining",
+               "clock_state","screen","weight","bout","colors_swapped"],
+  "properties": {
+    "type": {"const": "state"},
+    "v": {"const": 1},
+    "session": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,16}$"},
+    "seq": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "sender_ts": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "left_score": {"type": "integer", "minimum": 0, "maximum": 99},
+    "right_score": {"type": "integer", "minimum": 0, "maximum": 99},
+    "left_warnings": {"type": "integer", "minimum": 0, "maximum": 9},
+    "right_warnings": {"type": "integer", "minimum": 0, "maximum": 9},
+    "period": {"type": "integer", "minimum": 1, "maximum": 9},
+    "clock_ms_remaining": {"type": "integer", "minimum": 0, "maximum": 3600000},
+    "clock_state": {"enum": ["running","stopped","injury","expired"]},
+    "screen": {"enum": ["score","splash"]},
+    "weight": {"type": "string", "pattern": "^[\\x20-\\x7E]{0,8}$"},
+    "bout": {"type": "string", "pattern": "^[\\x20-\\x7E]{0,8}$"},
+    "colors_swapped": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}
